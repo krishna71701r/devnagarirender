@@ -4,80 +4,86 @@ org 0x7C00
 start:
     cli
     xor ax, ax
-    mov ds, ax          ; DS = 0x0000
+    mov ds, ax
+    mov es, ax
     mov ss, ax
-    mov sp, 0x7C00      ; stack at 0x0000:0x7C00
+    mov sp, 0x7C00
     sti
+      mov ax, 0x9000
+    mov es, ax
+    xor bx, bx
 
-    ; set VGA mode 13h (320×200, 256 colors)
+    mov ah, 0x02        ; BIOS read sector
+    mov al, 8           ; Number of sectors (8 x 512 = 4096 bytes)
+    mov ch, 0           ; Cylinder 0
+    mov cl, 2           ; Sector 2 (1-based)
+    mov dh, 0           ; Head 0
+    mov dl, 0x00        ; Drive 0 (floppy)
+  
+  
+    int 0x13
+    jc .disk_fail
+
+    ; Set video mode 13h
     mov ax, 0x0013
     int 0x10
 
-    ; point ES at VGA memory
-    mov ax, 0xA000
-    mov es, ax
+    ; Read 8 sectors starting from sector 2 to load 3660 bytes
+   
 
-    ; SI -> bitmap data, CX = rows, DI = screen offset
-    mov si, bitmap
-    mov cx, 23       ; 12 rows
-    xor di, di          ; start at top-left
+    ; Prepare to render glyph from buffer (first 24 bytes)
+    mov ax, 0x9000
+    mov ds, ax
+    xor si, si
+    add si, 0
+
+    mov cx, 29
+    xor di, di           ; 12 rows
+             ; start at VGA offset 0
+.RE:
+    
+    add si,2
+    mov cx, 29 
+    mov ax, 0xA000
+    mov es, ax          ; ES = VGA memory
 
 .draw_rows:
-    lodsw               ; AX = next 16-bit row
-    mov bx, ax          ; copy bits
-
-    push cx             ; save outer loop counter
-    push di             ; save row start for restor
-
-    mov cx, 16          ; 16 bits per row
+    lodsw
+    xchg al, ah 
+    mov bx, ax
+    push cx
+    push di
+    mov cx, 16
 
 .draw_bits:
-    shl bx, 1            ; shift MSB into CF
-    jnc .skip_pixel      ; if bit was 0, skip (transparent)
-
-    mov al, 0x0F         ; white pixel
-    stosb                ; write to [es:di], di++
-    jmp .next_bit
-
-.skip_pixel:
-    inc di               ; still need to advance DI
-.next_bit:
+    shl bx, 1           ; shift MSB into CF
+    jnc .skip
+    mov al, 0x0F        ; white pixel
+    stosb               ; write to [es:di], inc di
+    jmp .next
+.skip:
+    inc di              ; skip pixel (leave background)
+.next:
     loop .draw_bits
 
-    pop di              ; restore row start
-    add di, 320         ; move to next scanline
-    pop cx              ; restore outer counter
+    pop di
+    add di, 320         ; next scanline
+    pop cx
     loop .draw_rows
+    cmp si, 1442
+    jle .RE
 .halt:
     hlt
     jmp .halt
 
-; 12 rows × 2 bytes = 24 bytes of glyph data
-bitmap:
-    dw 0b0000000000000000
-    dw 0b0000000000000000
-    dw 0b0000000000000000
-    dw 0b0000000000000000
-    dw 0b0000000000000000
-    dw 0b0000000000000000
-    dw 0b0000000000000000
-    dw 0b0000001000000000
-    dw 0b0000001100000000
-    dw 0b0000000111100000
-    dw 0b0000000000110000
-    dw 0b0000011000010000
-    dw 0b0001111100111100
-    dw 0b0000000110010000
-    dw 0b0000000110010000
-    dw 0b0000011100010000
-    dw 0b0110010111110000
-    dw 0b0010000110010000
-    dw 0b0011000010010000
-    dw 0b0001100110010000
-    dw 0b0000111100010000
-    dw 0b0000000000010000
-    dw 0b0000000000000000
-; pad boot sector to 510 bytes
+; Handle disk error
+
+.disk_fail:
+    mov ah,0x0E
+    mov al , 'e'
+    int 0x10
+    jmp .disk_fail
+
+
 times 510-($-$$) db 0
-; boot signature
-dw 0xAA55
+    dw 0xAA55
