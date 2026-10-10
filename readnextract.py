@@ -2,7 +2,7 @@ def printb(byte):
     l=[]
     for i in byte:
         print(f'{i:08b}')
-f= open('fontbitmaps.bin','rb')
+f= open('char.bin','rb')
 offset=122
 f.seek(offset)
 byte=f.read(58)
